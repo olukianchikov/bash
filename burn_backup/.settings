@@ -1,0 +1,37 @@
+# ------  Logging   -------------------
+# Log file. If log is not found, messages will go to /dev/tty
+log_file=/var/log/backup.log
+#/var/log/backup.log
+
+# ------ Email notifications ----------
+# Who will receive emails on script errors.
+# notifications_user=  will disable email notifications
+notifications_user=olukyanchikov@ymail.com
+
+# Machine or host name. Short name that will be used in outgoing
+# email notifications.
+host_name=oleg
+
+# ------- Remotes -----------------------
+# Ip address of the remote host
+remote_host=80.93.48.144
+
+# Username on the remote host
+remote_user=lon
+
+# Config file on the remote host
+# Normally, you may leave it with no value
+# If config file is not found, write here path to 
+# config file relative to remote user's home directory
+remote_config=
+
+# ------ Locations ----------------------
+# Local directory for temporary files
+temp_directory=/usr/local/tmp
+
+# Program on local system which will be used to
+# burn image on disc:
+burn_program=/usr/bin/k3b
+
+# Additional arguments for burning program:
+burn_program_args=

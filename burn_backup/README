@@ -1,0 +1,12 @@
+# Scripts to download backup files from remote servers.
+# This include main server's backups and database dumps.
+# get_bckup.sh uses 'settings' file that is in the same
+# directory with the script. You can use -a [ip_address]
+# key along with -u [user] and -c [remote_config_file]
+# in get_bckup.sh. The script connects to remote
+# machine, searches for .settings file in remote user's
+# directory. In that file there should be information
+# on where main_backup directory on that system and
+# db_backup (if required).
+# All backups saved in temporary path locally (see .settins)
+# Then burning cd starts it's operation.
