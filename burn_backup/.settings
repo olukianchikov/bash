@@ -29,9 +29,6 @@ remote_config=
 # Local directory for temporary files
 temp_directory=/usr/local/tmp
 
-# Program on local system which will be used to
-# burn image on disc:
-burn_program=/usr/bin/k3b
-
-# Additional arguments for burning program:
-burn_program_args=
+# Local directory for temporary iso images.
+iso_directory=/usr/local/tmp/iso
+# End of settings file

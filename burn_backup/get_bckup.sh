@@ -25,11 +25,23 @@ function onexit() {
       error_msg=`echo -e "$error_msg" | awk '{if ($0 !~ "^$"){print $0;}}'`
       test -z "$USER_TO_MAIL" ||\
       echo -e "$error_msg" >> $ERR_F
+      local j=`echo "$CREATED_LINKS" | awk '{print NF; exit;}'`
+    # Try to delete all created links:
+      while [[ $j -gt 0 ]]
+      do
+	   local cur_link=`echo "$CREATED_LINKS" | awk '{print $"'$j'"; exit;}'`
+	   unlink $cur_link
+	   j=` expr $j - 1 `
+      done
   # Try to delete created directories if they empty:
       local i=`echo "$CREATED_DIRS" | awk '{print NF; exit;}'`
       while [[ $i -gt 0 ]]
       do
-          rmdir `echo "$CREATED_DIRS" | awk '{print $"'$i'"; exit;}'` >/dev/null 2>/dev/null
+          local cur_dir=`echo "$CREATED_DIRS" | awk '{print $"'$i'"; exit;}'`
+          test -d $cur_dir -a $cur_dir != "/" &&\
+          {
+             rmdir "$cur_dir" >/dev/null 2>/dev/null
+          }
           i=` expr $i - 1 `
       done
   fi
@@ -48,12 +60,68 @@ function ontermination() {
   error_msg=`echo -e "$error_msg" | awk '{if ($0 !~ "^$"){print $0;}}'`
   test -z "$USER_TO_MAIL" ||\
   echo -e "Backup script has been terminated.\n""$error_msg" >> $ERR_F
+    local j=`echo "$CREATED_LINKS" | awk '{print NF; exit;}'`
+    # Try to delete all created links:
+      while [[ $j -gt 0 ]]
+      do
+	   local cur_link=`echo "$CREATED_LINKS" | awk '{print $"'$j'"; exit;}'`
+	   unlink $cur_link
+	   j=` expr $j - 1 `
+      done
+  # Try to delete created directories if they empty:
+      local i=`echo "$CREATED_DIRS" | awk '{print NF; exit;}'`
+      while [[ $i -gt 0 ]]
+      do
+          local cur_dir=`echo "$CREATED_DIRS" | awk '{print $"'$i'"; exit;}'`
+          test -d $cur_dir -a $cur_dir != "/" &&\
+          {
+             rmdir "$cur_dir" >/dev/null 2>/dev/null
+          }
+          i=` expr $i - 1 `
+      done
+}
+
+function save_local_content() {
+  local local_dir=$1
+  local today=$TODAY_SUFFIX
+  test -d $local_dir || exit 1
+  local local_size=`du -b -d0 -L $local_dir | awk '{print $1;}'`
+  test $local_size -eq 0 && exit 1
+  
+  test -d $TEMP_DIR"local/" ||\
+  {
+    mkdir $TEMP_DIR"local/" >/dev/null 2>/dev/null
+    test $? -ne 0 && exit 1
+  }
+  
+  test -d $TEMP_DIR"local/""local_"$today || \
+  {
+   mkdir $TEMP_DIR"local/""local_"$today >/dev/null 2>/dev/null
+   if [[ $? -ne 0 ]];
+   then 
+      exit 1
+   fi
+  }  
+  cp -r $local_dir $TEMP_DIR"local/""local_"$today 2>>$ERR_F || exit 1
+  if [[ ! -z `ls $TEMP_DIR"lastbackup" | grep "local"` ]];
+  then
+        while [[ 1 ]];
+        do
+            to_delete=`ls $TEMP_DIR"lastbackup" | grep "local" | awk '{ if(NR==1){print $0; exit}}'`
+            test -z "$to_delete" && break
+            test -L $TEMP_DIR"lastbackup/""$to_delete" -o -f $TEMP_DIR"lastbackup/""$to_delete" && rm $TEMP_DIR"lastbackup/"$to_delete
+       done
+   fi
+   ln -s $TEMP_DIR"local/""local_"$today $TEMP_DIR"lastbackup/""local""_backup_"$today &&\
+   return 0
 }
 
 # Variables
 CURPATH=`echo "$0" | awk -F/ 'BEGIN { OFS="/"  } { $NF = ""; print; }'`
 SETTINGS_F=$CURPATH".settings"
 CREATED_DIRS=""
+CREATED_LINKS=""
+DIRECTORIES_TO_ISO="" # this variable will store directory names with saved files inside (dumps and backups).
 # supplemential variables for remote control:
 TODAY_SUFFIX=`date +'%y%m%d'`
 R_CONFIG_TEXT=""   # text of .settings file on remote host
@@ -74,6 +142,7 @@ R_CONFIG=""
 TEMP_DIR=""
 BURN_PROG=""
 BURN_PROG_ARGS=""
+ISO_DIR=""
 #Variables from remote config:
 R_M_DIR=""
 R_DB_DIR=""
@@ -103,19 +172,18 @@ do
 			  R_CONFIG=$parameter_val ;;
          "temp_directory") TEMP_DIR=$parameter_val 
 			   test ${TEMP_DIR:0-1} != "/" && TEMP_DIR=$TEMP_DIR"/";;
-         "burn_program") BURN_PROG=$parameter_val ;;
-         "burn_program_args") test -z "$parameter_val" || BURN_PROG_ARGS=$parameter_val ;;
      esac
 done <"${SETTINGS_F:?'Sorry no settings file was found. Aborting.'}"
 # end of parsing .settings file
 
-while getopts a:h:u:c: option
+while getopts a:h:u:c:l: option
 do
  case "${option}"
  in
 		c) R_CONFIG=${OPTARG} ;;
 		a) R_HOST=${OPTARG} ;;
 		u) R_USER=${OPTARG} ;;
+		l) LOCAL_DIR=${OPTARG} ;;
                 h) show_help >/dev/tty
                    exit 0           ;;
  esac
@@ -126,18 +194,6 @@ trap "{ onexit \"\$ERR_MSG\"  ; }" EXIT
 #trap "{ onerror \"\$ERR_MSG\" ; exit 1 ; }" ERR
 trap "{ ontermination \"\$ERR_MSG\"  ; }" TERM
 trap "{ ontermination \"\$ERR_MSG\"  ; }" HUP
-
-test -z "$R_HOST" &&\
-{  # not specified
-   ERR_MSG=$ERR_MSG`cutedate`"Error. remote_host not set.""\n"
-   exit 1
-}
-
-test -z "$R_USER" &&\
-{ # not specified
-    ERR_MSG=$ERR_MSG`cutedate`"Error. remote_user not set.""\n"
-    exit 1
-}
 
 test -d $TEMP_DIR || \
 {  # not a directory
@@ -151,22 +207,35 @@ test -w $TEMP_DIR || \
     exit 1
 }
 
-test -f $BURN_PROG || \
-{ # not found
-    ERR_MSG=$ERR_MSG`cutedate`"Error. burn_program $BURN_PROG not found""\n"
-    exit 1
-}
-
-test -x $BURN_PROG || \
-{ # not executable
-    ERR_MSG=$ERR_MSG`cutedate`"Error. burn_program $BURN_PROG not executable""\n"
-    exit 1
-}
-
 test -w $LOG_F || LOG_F=/dev/tty
 test -f $LOG_F || LOG_F=/dev/tty
 test -w $ERR_F || ERR_F=/dev/tty
 test -f $ERR_F || ERR_F=/dev/tty
+
+test -z "$LOCAL_DIR" || \
+{
+  save_local_content "$LOCAL_DIR"
+  if [[ $? -eq 0 ]];
+  then
+        echo `cutedate`"Local content of directory $LOCAL_DIR saved successfully." >>$LOG_F
+        exit 0
+  else
+        ERR_MSG=$ERR_MSG`cutedate`"Error. Can not save local content from $LOCAL_DIR to $TEMP_DIR""\n"
+        exit 1
+  fi
+}
+
+test -z "$R_HOST" &&\
+{  # not specified
+   ERR_MSG=$ERR_MSG`cutedate`"Error. remote_host not set.""\n"
+   exit 1
+}
+
+test -z "$R_USER" &&\
+{ # not specified
+    ERR_MSG=$ERR_MSG`cutedate`"Error. remote_user not set.""\n"
+    exit 1
+}
 
 #  Check if remote_host is reachable:
 ping -w 2 $R_HOST >/dev/null ||\
@@ -187,15 +256,46 @@ test -d $TEMP_DIR"$R_HOST" || \
       CREATED_DIRS=$CREATED_DIRS$TEMP_DIR"$R_HOST"" "
    fi
 }
+# Create subdirectory in TEMP_DIR for symbolic links to the backup :
+test -d $TEMP_DIR"lastbackup" || \
+{
+   mkdir $TEMP_DIR"lastbackup" >/dev/null 2>/dev/null
+   if [[ $? -ne 0 ]];
+   then 
+      ERR_MSG=$ERR_MSG`cutedate`"Error. Can not create $TEMP_DIR'lastbackup' directory.""\n"
+      exit 1
+   else
+      CREATED_DIRS=$CREATED_DIRS$TEMP_DIR"lastbackup"" "
+   fi
+}
+
 # Create one more subdirectory
 c=0
 while [[ $c -lt 9 ]]
 do
   test $c -eq 0 && ending="" || ending="_$c"
   mkdir $TEMP_DIR"$R_HOST/""backup."$TODAY_SUFFIX"$ending" 2>/dev/null &&\
-  {
+  { 
+    # Before we create new link for the backup to this host, we have to delete the old one.
+    # Delete all files in lastbackup directory for current REMOTE_HOST:
+    if [[ ! -z `ls $TEMP_DIR"lastbackup" | grep $R_HOST` ]];
+    then
+#        amount_to_del=`ls $TEMP_DIR"lastbackup" | grep $R_HOST | wc -l`
+#        num=1
+#       while [[ $num -le $amount_to_del ]];
+        while [[ 1 ]];
+        do
+            to_delete=`ls $TEMP_DIR"lastbackup" | grep $R_HOST | awk '{ if(NR==1){print $0; exit}}'`
+            test -z "$to_delete" && break
+            test -L $TEMP_DIR"lastbackup/""$to_delete" -o -f $TEMP_DIR"lastbackup/""$to_delete" && rm $TEMP_DIR"lastbackup/"$to_delete
+#            num=` expr $num + 1 `
+       done
+    fi
+    ln -s $TEMP_DIR"$R_HOST/""backup."$TODAY_SUFFIX"$ending" $TEMP_DIR"lastbackup/"$R_HOST"_backup_"$TODAY_SUFFIX"$ending"
+    CREATED_LINKS=$CREATED_LINKS$TEMP_DIR"lastbackup/"$R_HOST"_backup_"$TODAY_SUFFIX"$ending"" "
     TEMP_DIR=$TEMP_DIR"$R_HOST/""backup."$TODAY_SUFFIX"$ending/"
     CREATED_DIRS=$CREATED_DIRS$TEMP_DIR" "
+    DIRECTORIES_TO_ISO=$DIRECTORIES_TO_ISO" "$TEMP_DIR
     break
   } ||\
   {
@@ -221,8 +321,6 @@ test -z "$R_CONFIG_TEXT" &&\
    ERR_MSG=$ERR_MSG`cutedate`"Error. Can not read remote config. Maybe authentication problems. ""\n"
    exit 1
 }
-
-
 #      ....    All   about    main     backup     from    remote    server   ....
 R_M_DIR=`echo "$R_CONFIG_TEXT" | awk -F "=" '\
 {if ($1=="main_backup_dir"){\
