@@ -239,7 +239,8 @@ ISO_FILE_SIZE=`stat --format=%s $ISO_FILE`
 # gracetime - timeout before start
 (\
 echo `cutedate`" Burning started." >>$LOG_F
-wodim -dummy -s speed=2 gracetime=8  dev="$DRIVE_NAME" -data $ISO_FILE ||\
+# Write wodim -dummy to just test but not write
+wodim -s speed=2 gracetime=8  dev="$DRIVE_NAME" -data $ISO_FILE ||\
 echo `cutedate`" Burning failed." >>$LOG_F
 # Checking md5 sum of first ISO_FILE_SIZE bytes on the disk:
 # bs - how many bytes at a time to read and write (block size)
