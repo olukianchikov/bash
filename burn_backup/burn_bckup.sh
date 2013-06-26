@@ -1,4 +1,4 @@
-#!/bin/bash -
+#!/bin/bash -xv
 # Burning script
 # It creates iso file from given files and burn it to the disk
 
@@ -40,6 +40,18 @@ USER_TO_MAIL="oleg"
 ERR_MSG=""
 TEMP_DIR=""
 MYNAME="server"
+# These two strings will hold a command to burn and finalize a disk (if necessary)
+# At the end of the script they will be evaluated by checking if the variable is empty
+# or not. If empty, that will mean this operation is not needed. However, bear in mind, that
+# both variables may not be empty (It will be considered as an error). 
+BURN_COMMAND=""      # command to burn a disk
+CLOSING_COMMAND=""   # Command to finalize a disk
+
+burning_needed=0
+closing_needed=0
+
+cur_size=0     # The size of existing files on the media.
+
 MD5SUM=""
 MAX_MEDIA_SIZE="0"   # maximum size of disk in bytes
 ISO_DIR=""
@@ -161,6 +173,7 @@ ls "$DRIVE_NAME" >/dev/null 2>/dev/null || \
 hasMedia=0
 nameMedia=""
 blankMedia=""
+is_closed=0
 
 hasMedia=`udisks --show-info "$DRIVE_NAME" | awk -F ':' '{ if ($0 ~ "has media") { match($2,"[01] *\(*"); print substr($2,RSTART,1); }}'`
 test $hasMedia -eq 1 ||
@@ -169,33 +182,51 @@ test $hasMedia -eq 1 ||
   exit 1
 }
 
+# -- If the disk is closed, exit:
+is_closed=`udisks --show-info "$DRIVE_NAME" | awk -F ':' '{if($0 ~ "^ *closed"){match ($2, "[01]"); print substr($2, RSTART, RLENGTH);}}'`
+if [[ $is_closed -eq 1 ]];
+then
+    ERR_MSG=$ERR_MSG`cutedate`"Error. Can not write to the disk because the disk is finalized already.""\n"
+    exit 1         
+fi
+
+
+
+#------- Determining how much of free space we have on the media based on    ---------
+#-------    what type of disk we have:                                      ---------
 nameMedia=`udisks --show-info "$DRIVE_NAME" | awk -F ':' '{if($0 ~ "^ *media"){match($2,"[0-9a-zA-Z_.-]+"); print substr($2,RSTART,RLENGTH);}}'`
 echo $nameMedia | grep -i "dvd" >/dev/null &&\
-{  # If we have DVD
+{  # --------- If we have a DVD -------------
   blankMedia=`udisks --show-info "$DRIVE_NAME" | awk -F ':' '{if($0 ~ "blank"){match($2,"[01] *\(*"); print substr($2,RSTART,1);}}'`
-  if [[ $blankMedia -eq 0 ]];
-  then
-       ERR_MSG=$ERR_MSG`cutedate`"Error. $nameMedia is not blank.""\n"
-       exit 1
-  fi
   # As we don't want to spend much time determining exact max size, we will assume minimum 
   # for most dvd-r or dvd+r discs
   MAX_MEDIA_SIZE="4700372992"
+  if [[ $blankMedia -eq 0 ]];
+  then
+       # --  Disc is not blank (we will try to append to the media). 
+       # --  Calculate how much space left:
+       cur_size=`udisks --show-info "$DRIVE_NAME" | awk -F ':' '{if($0 ~ "^ *size"){match($2,"[0-9]+"); print substr($2, RSTART, RLENGTH);}}'`
+       MAX_MEDIA_SIZE=`echo "scale=0; $MAX_MEDIA_SIZE - $cur_size" | bc `
+  fi
 }
 
 echo $nameMedia | grep -i "cd" >/dev/null &&\
-{  # If we have CD
+{  # --------- If we have a CD -------------
   blankMedia=`udisks --show-info "$DRIVE_NAME" | awk -F ':' '{if($0 ~ "blank"){match($2,"[01] *\(*"); print substr($2,RSTART,1);}}'`
-  if [[ $blankMedia -eq 0 ]];
-  then
-       ERR_MSG=$ERR_MSG`cutedate`"Error. $nameMedia is not blank.""\n"
-       exit 1
-  fi
   # As we don't want to spend much time determining exact max size, we will assume minimum 
   # for most cd-r disks
   MAX_MEDIA_SIZE="737280000"
+  if [[ $blankMedia -eq 0 ]];
+  then
+       # --  Disc is not blank (we will try to append to the media).
+       # --  Calculate how much space left:
+       cur_size=`udisks --show-info "$DRIVE_NAME" | awk -F ':' '{if($0 ~ "^ *size"){match($2,"[0-9]+"); print substr($2, RSTART, RLENGTH);}}'`
+       MAX_MEDIA_SIZE=`echo "scale=0; $MAX_MEDIA_SIZE - $cur_size" | bc `
+  fi
 }
+ # --------------------------------------------
 
+ # Get the name for ISO-FILE
 test -f $ISO_DIR"$ISO_FILE_prefix""$ISO_FILE_suffix" &&\
 {
        ERR_MSG=$ERR_MSG`cutedate`"Error. $ISO_DIR$ISO_FILE_prefix$ISO_FILE_suffix file exists.""\n"
@@ -204,56 +235,172 @@ test -f $ISO_DIR"$ISO_FILE_prefix""$ISO_FILE_suffix" &&\
 {
        ISO_FILE=$ISO_DIR"$ISO_FILE_prefix""$ISO_FILE_suffix"
 }
-
-
-echo "$MAX_MEDIA_SIZE"
+ # --------------------------
 
 # Get the size of the content of ISO_DIR, following all symbol links.
 # ISO_DIR should contain only relevant files to burn and nothing more.
   SOURCE_FILES_SIZE=`du -b -d0 -L $ISO_DIR | awk '{print $1;}'`
 
-# Check if the size of our files is less that capacity of the optical disk:
-if [[ `echo "$SOURCE_FILES_SIZE > $MAX_MEDIA_SIZE" | bc` -eq 1 ]];
+# Check if the size of our files is less that capacity of the optical disk.
+# Actually, this should not happen because this script closes disk if it has no
+# enough free space. But if, for some reason, disk is not closed and have no
+# enough space, close it:
+if [[ `echo "$SOURCE_FILES_SIZE >= $MAX_MEDIA_SIZE" | bc` -eq 1 ]];
 then
+    # No free space
     ERR_MSG=$ERR_MSG`cutedate`"Error. $nameMedia does not have enough free space."`echo "$SOURCE_FILES_SIZE / 1048576" | bc`" Megabytes is needed.""\n"
-    exit 1
+    burning_needed=0
+    closing_needed=1
+else
+    # We have enough free space for the current backup burning.
+    burning_needed=1
+   #   Here we determine if we need to close the disk after appending current backup.
+   #   let's consider that if after today's burning there is no free space for one more 
+   #   backup (assuming its size is the same as today's), we have to close that disk.
+   if [[ `echo "$SOURCE_FILES_SIZE*2 >= $MAX_MEDIA_SIZE" | bc` -eq 1 ]];
+   then
+       closing_needed=1
+   else
+       closing_needed=0
+   fi 
 fi
 
+#   ------------  Preparing BURN_COMMAND and CLOSING_COMMAND for burning process:
+test $closing_needed -eq 0 -a $burning_needed -eq 0 &&\
+{
+    ERR_MSG=$ERR_MSG`cutedate`"Error. Could not define burning command for the disk ${nameMedia}.""\n"
+    exit 1
+}
+    # --- For CD:
+    # Change speed to 0 if problems
+    # gracetime - timeout before start
+echo $nameMedia | grep -i "cd" >/dev/null &&\
+{
+   if [[ $burning_needed -eq 1 && $closing_needed -eq 1 ]];
+   then
+       # This burning command will close the disk:
+       BURN_COMMAND="wodim -s speed=2 gracetime=8  dev=$DRIVE_NAME -data $ISO_FILE"
+       # No need for separate closing:
+       CLOSING_COMMAND=""
+   fi
 
-#generating ISO:
-genisoimage -f -r -J -o $ISO_FILE "$SOURCE_FILES_DIR"
-CREATED_FILES=$CREATED_FILES"$ISO_FILE "
+   if [[ $burning_needed -eq 1 && $closing_needed -eq 0 ]];
+   then
+       # This burning command will not close the disk:
+       BURN_COMMAND="wodim -multi -s speed=2 gracetime=8  dev=$DRIVE_NAME -data $ISO_FILE"
+       CLOSING_COMMAND=""
+   fi
+   
+   if [[ $burning_needed -eq 0 && $closing_needed -eq 1 ]];
+   then
+       # No burning is needed
+       BURN_COMMAND=""
+       # However, we have to close the disk (meaning we can't burn due to no free space, but
+       #   we can't leave the disk uncloased. So close it).
+       CLOSING_COMMAND="wodim -s speed=2 gracetime=8  dev=$DRIVE_NAME -data /dev/zero"
+   fi
+}
 
+   # --- For DVD:
+echo $nameMedia | grep -i "dvd" >/dev/null &&\
+{
+   if [[ $burning_needed -eq 1 && $closing_needed -eq 1 ]];
+   then
+       if [[ $blankMedia -eq 1 ]];
+       then
+           # Disk is blank
+           BURN_COMMAND="growisofs -speed=1 -Z $DRIVE_NAME=$ISO_FILE"
+       else 
+           # Disk is not blank
+           BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"
+       fi
+       CLOSING_COMMAND="growisofs -speed=1 -dvd-compat -M $DRIVE_NAME=/dev/zero"
+   fi
+
+   if [[ $burning_needed -eq 1 && $closing_needed -eq 0 ]];
+   then
+       if [[ $blankMedia -eq 1 ]];
+       then
+           # Disk is blank
+           BURN_COMMAND="growisofs -speed=1 -Z $DRIVE_NAME=$ISO_FILE"
+       else 
+           # Disk is not blank
+           BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"
+       fi
+       CLOSING_COMMAND=""
+   fi
+   
+   if [[ $burning_needed -eq 0 && $closing_needed -eq 1 ]];
+   then
+       BURN_COMMAND=""
+       CLOSING_COMMAND="growisofs -speed=1 -dvd-compat -M $DRIVE_NAME=/dev/zero"
+   fi
+}
+#  -------------------------------------------------------------------------------
+
+
+#  ------    generating ISO:
+dir_name="backup_"`date +"%y%m%d_%H%M"`
+genisoimage -f -r -J -root $dir_name -o $ISO_FILE "$SOURCE_FILES_DIR"
 test $? -ne 0 &&\
 {
+       CREATED_FILES=$CREATED_FILES"$ISO_FILE "
        ERR_MSG=$ERR_MSG`cutedate`"Error during ISO creation. Aborting.""\n"
        exit 1
 }
+CREATED_FILES=$CREATED_FILES"$ISO_FILE "
+# ----
 
-# get Md5 sum of iso image
-MD5SUM=`md5sum $ISO_FILE`
+
+# Calculate expected md5 sum of the disk after burning:
+if [[ $cur_size -eq 0 ]];
+then
+     MD5SUM=`md5sum $ISO_FILE | awk '{print $1;}'`
+else
+     MD5SUM=`{ dd if="$DRIVE_NAME" bs=1 count=$cur_size && cat $ISO_FILE ; } | md5sum | awk '{print $1;}'`
+fi
+# -------
+
+# Get the file size of the ISO image:
 ISO_FILE_SIZE=`stat --format=%s $ISO_FILE`
 
-# burning:
-# Change speed to 0 if problems
-# gracetime - timeout before start
-(\
-echo `cutedate`" Burning started." >>$LOG_F
-# Write wodim -dummy to just test but not write
-wodim -s speed=2 gracetime=8  dev="$DRIVE_NAME" -data $ISO_FILE ||\
-echo `cutedate`" Burning failed." >>$LOG_F
-# Checking md5 sum of first ISO_FILE_SIZE bytes on the disk:
-# bs - how many bytes at a time to read and write (block size)
-# count=xxxx - copy only xxxx input blocks
-resulted_md5=`dd if="$DRIVE_NAME" bs=1 count=$ISO_FILE_SIZE | md5sum`
 
-if [[ `echo "$resulted_md5 != $MD5SUM" | bc` -eq 1  ]];
+
+# ---------------- burning part --------------------------
+(\
+echo `cutedate`" Burning is starting." >>$LOG_F
+/usr/bin/eject -a off
+
+if [[ ! -z $BURN_COMMAND ]];
 then
- echo `cutedate`" Disk has different md5 sum that the iso-file. Disk may have corrupted data. Iso image is kept for future use." >>$LOG_F
-else
- echo `cutedate`" Burning completed successfully." >>$LOG_F
- rm $ISO_FILE >/dev/null 2>/dev/null
+    eval $BURN_COMMAND &&\
+    echo `cutedate`" Burning completed." >>$LOG_F ||\
+    echo `cutedate`"Error. Burning has been failed." >>$ERR_F
 fi
-/usr/bin/eject -s "$DRIVE_NAME"
-)&
+
+if [[ ! -z $CLOSING_COMMAND ]];
+then
+    eval $CLOSING_COMMAND &&\
+    echo `cutedate`"Disk has been finalized." >>$LOG_F ||\
+    echo `cutedate`"Error. Unable to finalize the disk." >>$ERR_F   
+fi
+
+# If disk is still inserted, calculate md5 sums and compare them.
+hasMedia=`udisks --show-info "$DRIVE_NAME" | awk -F ':' '{ if ($0 ~ "has media") { match($2,"[01] *\(*"); print substr($2,RSTART,1); }}'`
+if [[ $hasMedia -eq 1 ]];
+then
+   # Checking md5 sum of first ISO_FILE_SIZE bytes on the disk:
+   # bs - how many bytes at a time to read and write (block size)
+   # count=xxxx - copy only xxxx input blocks
+   probable_total_size=`echo "$cur_size + $ISO_FILE_SIZE" | bc`
+   resulted_md5=`dd if=${DRIVE_NAME} bs=1 count=$probable_total_size | /usr/bin/md5sum | awk '{print $1;}'`
+   
+   if [[ "$resulted_md5" != "$MD5SUM" ]];
+   then
+      echo `cutedate`" Disk has different md5 sum than the iso-file. Disk may have corrupted data. Iso image is kept for future use." >>$LOG_F
+   else  
+      rm $ISO_FILE >/dev/null 2>/dev/null
+   fi
+   /usr/bin/eject -s "$DRIVE_NAME"
+fi)&
 exit 0
