@@ -31,4 +31,9 @@ temp_directory=/usr/local/tmp
 
 # Local directory for temporary iso images.
 iso_directory=/usr/local/tmp/iso
+
+# ------ Burning options ----------------
+# Enable or disable multisession burning.
+# 1 enables and 0 disables;
+multi=0
 # End of settings file

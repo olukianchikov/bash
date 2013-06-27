@@ -97,6 +97,8 @@ MYNAME="server"
 BURN_COMMAND=""      # command to burn a disk
 CLOSING_COMMAND=""   # Command to finalize a disk
 
+MULTI=0              # Value from settings-file. It defines if we should use multi session burning.
+
 burning_needed=0
 closing_needed=0
 
@@ -131,6 +133,7 @@ do
 			   test ${TEMP_DIR:0-1} != "/" && TEMP_DIR=$TEMP_DIR"/";;
 	 "iso_directory") ISO_DIR=$parameter_val
 			test ${ISO_DIR:0-1} != "/" && ISO_DIR=$ISO_DIR"/";;
+         "multi") MULTI=$parameter_val ;;
      esac
 done <"${SETTINGS_F:?'Sorry no settings file was found. Aborting.'}"
 
@@ -337,9 +340,15 @@ echo $nameMedia | grep -i "cd" >/dev/null &&\
 
    if [[ $burning_needed -eq 1 && $closing_needed -eq 0 ]];
    then
-       # This burning command will not close the disk:
-       BURN_COMMAND="wodim -multi -s speed=2 gracetime=8  dev=$DRIVE_NAME -data $ISO_FILE"
-       CLOSING_COMMAND=""
+       if [[ ${MULTI} -eq 1 ]];
+       then
+           # This burning command will not close the disk:
+           BURN_COMMAND="wodim -multi -s speed=2 gracetime=8  dev=$DRIVE_NAME -data $ISO_FILE"
+           CLOSING_COMMAND=""
+       else
+           BURN_COMMAND="wodim -s speed=2 gracetime=8  dev=$DRIVE_NAME -data $ISO_FILE"
+           CLOSING_COMMAND=""
+       fi
    fi
    
    if [[ $burning_needed -eq 0 && $closing_needed -eq 1 ]];
@@ -363,10 +372,17 @@ echo $nameMedia | grep -i "dvd" >/dev/null &&\
            BURN_COMMAND="growisofs -speed=1 -Z $DRIVE_NAME=$ISO_FILE"
        else 
            # Disk is not blank
-           sector_numbers="-C `getSectorNumbers $DRIVE_NAME`"
-           BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"" -C `getSectorNumbers $DRIVE_NAME`"
+           if [[ ${MULTI} -eq 1 ]];
+           then
+               sector_numbers="-C `getSectorNumbers $DRIVE_NAME`"
+               BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"" -C `getSectorNumbers $DRIVE_NAME`"
+               CLOSING_COMMAND="growisofs -speed=1 -dvd-compat -M $DRIVE_NAME=/dev/zero"
+           else
+               BURN_COMMAND="growisofs -speed=1 -M -dvd-compat $DRIVE_NAME=$ISO_FILE"
+               CLOSING_COMMAND=""
+           fi
        fi
-       CLOSING_COMMAND="growisofs -speed=1 -dvd-compat -M $DRIVE_NAME=/dev/zero"
+       
    fi
 
    if [[ $burning_needed -eq 1 && $closing_needed -eq 0 ]];
@@ -377,8 +393,13 @@ echo $nameMedia | grep -i "dvd" >/dev/null &&\
            BURN_COMMAND="growisofs -speed=1 -Z $DRIVE_NAME=$ISO_FILE"
        else 
            # Disk is not blank
-           BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"" -C `getSectorNumbers $DRIVE_NAME`"
-           sector_numbers="-C `getSectorNumbers $DRIVE_NAME`"
+           if [[ ${MULTI} -eq 1 ]];
+           then
+               BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"" -C `getSectorNumbers $DRIVE_NAME`"
+               sector_numbers=" -C `getSectorNumbers $DRIVE_NAME`"
+           else
+               BURN_COMMAND="growisofs -speed=1 -M -dvd-compat $DRIVE_NAME=$ISO_FILE"
+           fi
        fi
        CLOSING_COMMAND=""
    fi
