@@ -29,6 +29,56 @@ function onexit() {
   fi
 }
 
+# Function that should be used for DVD disks only.
+# It give an information of starting sector of previous session and
+# the starting sector number for current session. It is required by
+# genisoimage.
+# parameter - drive_name
+function getSectorNumbers() {
+      local drive_name=$1
+      dvd+rw-mediainfo ${drive_name} | awk -F ':' 'BEGIN{\
+	next_track=0;\
+	first_sector_last_sess=0;\
+	first_sector_new_sess=0;\
+	end_search=0;\
+	end_search2=0;\
+      }\
+      {\
+	if ($1 ~ "\"Next\" Track")\
+	{\
+	    next_track=$2;\
+	    sub(/ */,"",next_track);\
+	}\
+        regexp_string="READ TRACK INFORMATION\[#"(next_track-1)"\]";\
+	if (match($0, regexp_string)==1){\
+	    end_search=(NR + 5);\
+	}\
+	if (NR <= end_search){\
+	    if($1 == " Track Start Address"){\
+	    first_sector_last_sess=$2;\
+	    sub(/ */,"",first_sector_last_sess);\
+	}\
+	}\
+	regexp_string2="READ TRACK INFORMATION\[#"next_track"\]";\
+	if (match($0, regexp_string2)==1){\
+	    end_search2=(NR + 5);\
+	}\
+	if (NR <= end_search2){\
+	if($1 == " Track Start Address"){\
+	first_sector_new_sess=$2;\
+	sub(/ */,"",first_sector_new_sess);\
+	}\
+	}\
+      }\
+    END{\
+	sub(/\*2KB/,"",first_sector_last_sess);\
+	sub(/\*2KB/,"",first_sector_new_sess);\
+	print first_sector_last_sess","first_sector_new_sess;\
+}'
+
+}
+
+
 CURPATH=`echo "$0" | awk -F/ 'BEGIN { OFS="/"  } { $NF = ""; print; }'`
 SETTINGS_F=$CURPATH".settings"
 ISO_FILE_prefix="Servers_backup_"
@@ -51,8 +101,9 @@ burning_needed=0
 closing_needed=0
 
 cur_size=0     # The size of existing files on the media.
+sector_numbers=""  # This variable is needed for genisoimage to crate a proper image for multisession
 
-MD5SUM=""
+MD5SUM=""            # Currently I don't know how to calculate md5 sum for multisession disks.
 MAX_MEDIA_SIZE="0"   # maximum size of disk in bytes
 ISO_DIR=""
 SOURCE_FILES_DIR=""
@@ -312,7 +363,8 @@ echo $nameMedia | grep -i "dvd" >/dev/null &&\
            BURN_COMMAND="growisofs -speed=1 -Z $DRIVE_NAME=$ISO_FILE"
        else 
            # Disk is not blank
-           BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"
+           sector_numbers="-C `getSectorNumbers $DRIVE_NAME`"
+           BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"" -C `getSectorNumbers $DRIVE_NAME`"
        fi
        CLOSING_COMMAND="growisofs -speed=1 -dvd-compat -M $DRIVE_NAME=/dev/zero"
    fi
@@ -325,7 +377,8 @@ echo $nameMedia | grep -i "dvd" >/dev/null &&\
            BURN_COMMAND="growisofs -speed=1 -Z $DRIVE_NAME=$ISO_FILE"
        else 
            # Disk is not blank
-           BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"
+           BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"" -C `getSectorNumbers $DRIVE_NAME`"
+           sector_numbers="-C `getSectorNumbers $DRIVE_NAME`"
        fi
        CLOSING_COMMAND=""
    fi
@@ -340,6 +393,8 @@ echo $nameMedia | grep -i "dvd" >/dev/null &&\
 
 
 #  ------    generating ISO:
+# sector_numbers holds either empty string or sector numbers in format 0,0.
+# They are needed for generating ISO file that is suitable for multi sessions.
 dir_name="backup_"`date +"%y%m%d_%H%M"`
 genisoimage -f -r -J -root $dir_name -o $ISO_FILE "$SOURCE_FILES_DIR"
 test $? -ne 0 &&\
@@ -353,12 +408,12 @@ CREATED_FILES=$CREATED_FILES"$ISO_FILE "
 
 
 # Calculate expected md5 sum of the disk after burning:
-if [[ $cur_size -eq 0 ]];
-then
-     MD5SUM=`md5sum $ISO_FILE | awk '{print $1;}'`
-else
-     MD5SUM=`{ dd if="$DRIVE_NAME" bs=1 count=$cur_size && cat $ISO_FILE ; } | md5sum | awk '{print $1;}'`
-fi
+#if [[ $cur_size -eq 0 ]];
+#then
+#     MD5SUM=`md5sum $ISO_FILE | awk '{print $1;}'`
+#else
+#     MD5SUM=`{ dd if="$DRIVE_NAME" bs=1 count=$cur_size && cat $ISO_FILE ; } | md5sum | awk '{print $1;}'`
+#fi
 # -------
 
 # Get the file size of the ISO image:
@@ -369,38 +424,47 @@ ISO_FILE_SIZE=`stat --format=%s $ISO_FILE`
 # ---------------- burning part --------------------------
 (\
 echo `cutedate`" Burning is starting." >>$LOG_F
-/usr/bin/eject -a off
+/usr/bin/eject -a off ${DRIVE_NAME}
 
 if [[ ! -z $BURN_COMMAND ]];
 then
     eval $BURN_COMMAND &&\
     echo `cutedate`" Burning completed." >>$LOG_F ||\
-    echo `cutedate`"Error. Burning has been failed." >>$ERR_F
+    {
+       echo `cutedate`"Error. Burning has been failed. Iso image is kept for future use." >>$ERR_F
+       /usr/bin/eject -s "$DRIVE_NAME"
+       exit 1
+    }
 fi
 
 if [[ ! -z $CLOSING_COMMAND ]];
 then
     eval $CLOSING_COMMAND &&\
     echo `cutedate`"Disk has been finalized." >>$LOG_F ||\
-    echo `cutedate`"Error. Unable to finalize the disk." >>$ERR_F   
+    {
+      echo `cutedate`"Error. Unable to finalize the disk. Iso image is kept for future use." >>$ERR_F
+      /usr/bin/eject -s "$DRIVE_NAME"
+      exit 1
+    }
 fi
 
 # If disk is still inserted, calculate md5 sums and compare them.
-hasMedia=`udisks --show-info "$DRIVE_NAME" | awk -F ':' '{ if ($0 ~ "has media") { match($2,"[01] *\(*"); print substr($2,RSTART,1); }}'`
-if [[ $hasMedia -eq 1 ]];
-then
+#hasMedia=`udisks --show-info "$DRIVE_NAME" | awk -F ':' '{ if ($0 ~ "has media") { match($2,"[01] *\(*"); print substr($2,RSTART,1); }}'`
+#if [[ $hasMedia -eq 1 ]];
+#then
    # Checking md5 sum of first ISO_FILE_SIZE bytes on the disk:
    # bs - how many bytes at a time to read and write (block size)
    # count=xxxx - copy only xxxx input blocks
-   probable_total_size=`echo "$cur_size + $ISO_FILE_SIZE" | bc`
-   resulted_md5=`dd if=${DRIVE_NAME} bs=1 count=$probable_total_size | /usr/bin/md5sum | awk '{print $1;}'`
+#   probable_total_size=`echo "$cur_size + $ISO_FILE_SIZE" | bc`
+#   resulted_md5=`dd if=${DRIVE_NAME} bs=1 count=$probable_total_size | /usr/bin/md5sum | awk '{print $1;}'`
    
-   if [[ "$resulted_md5" != "$MD5SUM" ]];
-   then
-      echo `cutedate`" Disk has different md5 sum than the iso-file. Disk may have corrupted data. Iso image is kept for future use." >>$LOG_F
-   else  
-      rm $ISO_FILE >/dev/null 2>/dev/null
-   fi
-   /usr/bin/eject -s "$DRIVE_NAME"
-fi)&
+#   if [[ "$resulted_md5" != "$MD5SUM" ]];
+#   then
+#      echo `cutedate`" Disk has different md5 sum than the iso-file. Disk may have corrupted data. Iso image is kept for future use." >>$LOG_F
+#   else  
+#      rm $ISO_FILE >/dev/null 2>/dev/null
+#   fi
+#   /usr/bin/eject -s "$DRIVE_NAME"
+#fi
+/usr/bin/eject -s "$DRIVE_NAME")&
 exit 0
