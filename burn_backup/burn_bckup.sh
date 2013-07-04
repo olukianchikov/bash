@@ -103,7 +103,8 @@ burning_needed=0
 closing_needed=0
 
 cur_size=0     # The size of existing files on the media.
-sector_numbers=""  # This variable is needed for genisoimage to crate a proper image for multisession
+sector_numbers=""  # This variable is needed for growisofs (using -C flag of genisoimage subprogram)
+		   #to crate a proper image for multisession
 
 MD5SUM=""            # Currently I don't know how to calculate md5 sum for multisession disks.
 MAX_MEDIA_SIZE="0"   # maximum size of disk in bytes
@@ -132,7 +133,7 @@ do
          "temp_directory") TEMP_DIR=$parameter_val 
 			   test ${TEMP_DIR:0-1} != "/" && TEMP_DIR=$TEMP_DIR"/";;
 	 "iso_directory") ISO_DIR=$parameter_val
-			test ${ISO_DIR:0-1} != "/" && ISO_DIR=$ISO_DIR"/";;
+			  test ${ISO_DIR:0-1} != "/" && ISO_DIR=$ISO_DIR"/";;
          "multi") MULTI=$parameter_val ;;
      esac
 done <"${SETTINGS_F:?'Sorry no settings file was found. Aborting.'}"
@@ -293,7 +294,8 @@ test -f $ISO_DIR"$ISO_FILE_prefix""$ISO_FILE_suffix" &&\
 
 # Get the size of the content of ISO_DIR, following all symbol links.
 # ISO_DIR should contain only relevant files to burn and nothing more.
-  SOURCE_FILES_SIZE=`du -b -d0 -L $ISO_DIR | awk '{print $1;}'`
+# SOURCE_FILES_DIR
+  SOURCE_FILES_SIZE=`du -b -d0 -L $SOURCE_FILES_DIR | awk '{print $1;}'`
 
 # Check if the size of our files is less that capacity of the optical disk.
 # Actually, this should not happen because this script closes disk if it has no
@@ -325,9 +327,10 @@ test $closing_needed -eq 0 -a $burning_needed -eq 0 &&\
     ERR_MSG=$ERR_MSG`cutedate`"Error. Could not define burning command for the disk ${nameMedia}.""\n"
     exit 1
 }
-    # --- For CD:
-    # Change speed to 0 if problems
-    # gracetime - timeout before start
+
+# --- For CD:
+# Change speed to 0 if problems
+# gracetime - timeout before start
 echo $nameMedia | grep -i "cd" >/dev/null &&\
 {
    if [[ $burning_needed -eq 1 && $closing_needed -eq 1 ]];
@@ -337,7 +340,6 @@ echo $nameMedia | grep -i "cd" >/dev/null &&\
        # No need for separate closing:
        CLOSING_COMMAND=""
    fi
-
    if [[ $burning_needed -eq 1 && $closing_needed -eq 0 ]];
    then
        if [[ ${MULTI} -eq 1 ]];
@@ -350,7 +352,6 @@ echo $nameMedia | grep -i "cd" >/dev/null &&\
            CLOSING_COMMAND=""
        fi
    fi
-   
    if [[ $burning_needed -eq 0 && $closing_needed -eq 1 ]];
    then
        # No burning is needed
@@ -361,58 +362,71 @@ echo $nameMedia | grep -i "cd" >/dev/null &&\
    fi
 }
 
-   # --- For DVD:
-echo $nameMedia | grep -i "dvd" >/dev/null &&\
+   # --- For DVD, except dvd_rw:
+echo $nameMedia | grep -i "dvd" | grep -v 'dvd_rw'  >/dev/null &&\
 {
-   if [[ $burning_needed -eq 1 && $closing_needed -eq 1 ]];
+   if [[ $burning_needed -eq 1 ]];
    then
        if [[ $blankMedia -eq 1 ]];
        then
-           # Disk is blank
            BURN_COMMAND="growisofs -speed=1 -Z $DRIVE_NAME=$ISO_FILE"
        else 
-           # Disk is not blank
            if [[ ${MULTI} -eq 1 ]];
            then
                sector_numbers="-C `getSectorNumbers $DRIVE_NAME`"
                BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"" -C `getSectorNumbers $DRIVE_NAME`"
-               CLOSING_COMMAND="growisofs -speed=1 -dvd-compat -M $DRIVE_NAME=/dev/zero"
            else
-               BURN_COMMAND="growisofs -speed=1 -M -dvd-compat $DRIVE_NAME=$ISO_FILE"
-               CLOSING_COMMAND=""
-           fi
-       fi
-       
-   fi
-
-   if [[ $burning_needed -eq 1 && $closing_needed -eq 0 ]];
-   then
-       if [[ $blankMedia -eq 1 ]];
-       then
-           # Disk is blank
-           BURN_COMMAND="growisofs -speed=1 -Z $DRIVE_NAME=$ISO_FILE"
-       else 
-           # Disk is not blank
-           if [[ ${MULTI} -eq 1 ]];
-           then
-               BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"" -C `getSectorNumbers $DRIVE_NAME`"
-               sector_numbers=" -C `getSectorNumbers $DRIVE_NAME`"
-           else
-               BURN_COMMAND="growisofs -speed=1 -M -dvd-compat $DRIVE_NAME=$ISO_FILE"
+               BURN_COMMAND="growisofs -speed=1 -Z -dvd-compat $DRIVE_NAME=$ISO_FILE"
            fi
        fi
        CLOSING_COMMAND=""
    fi
    
-   if [[ $burning_needed -eq 0 && $closing_needed -eq 1 ]];
+   if [[ $closing_needed -eq 1 ]];
    then
-       BURN_COMMAND=""
-       CLOSING_COMMAND="growisofs -speed=1 -dvd-compat -M $DRIVE_NAME=/dev/zero"
+        echo `cutedate`"After successful writing the disk will have no enough space and should be replaced." >>$LOG_F
    fi
 }
+# --- For DVD-RW:
+echo $nameMedia | grep -i "dvd_rw" >/dev/null &&\
+{
+  if [[ ${MULTI} -eq 1 ]];
+  then           # Multi session is set to ON - sequential mode    
+      if [[ $burning_needed -eq 1 ]];
+      then
+	  if [[ $blankMedia -eq 1 ]];
+	  then   # Disk is blank. 
+		BURN_COMMAND="dvd+rw-format -blank=full $DRIVE_NAME && growisofs -speed=1 -Z $DRIVE_NAME=$ISO_FILE"
+	  else   # Disk is not blank.
+		BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"" -C `getSectorNumbers $DRIVE_NAME`"
+		sector_numbers=" -C `getSectorNumbers $DRIVE_NAME`"
+	  fi
+      fi 
+      # Warn if this disk will be written last time:
+      if [[ $closing_needed -eq 1 ]];
+      then
+           echo `cutedate`"After successful writing the disk will have no enough space and should be replaced." >>$LOG_F
+      fi
+  else  # Multi session is set to OFF - restricted overwrite       
+      if [[ $burning_needed -eq 1 ]];
+      then  # It needs to be burnt
+	  if [[ $blankMedia -eq 1 ]];
+	  then  # Disk is blank. 
+                BURN_COMMAND="dvd+rw-format $DRIVE_NAME && growisofs -speed=1 -Z $DRIVE_NAME=$ISO_FILE"
+                CLOSING_COMMAND=""
+	  else # Disk is not blank. 
+	        BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"
+		CLOSING_COMMAND=""
+	  fi
+      fi
+      # Warn if this disk will be written last time:
+      if [[ $closing_needed -eq 1 ]];
+      then
+           echo `cutedate`"After successful writing the disk will have no enough space and should be replaced." >>$LOG_F
+      fi
+  fi
+}
 #  -------------------------------------------------------------------------------
-
-
 #  ------    generating ISO:
 # sector_numbers holds either empty string or sector numbers in format 0,0.
 # They are needed for generating ISO file that is suitable for multi sessions.
@@ -487,5 +501,6 @@ fi
 #   fi
 #   /usr/bin/eject -s "$DRIVE_NAME"
 #fi
-/usr/bin/eject -s "$DRIVE_NAME")&
+rm $ISO_FILE >/dev/null 2>/dev/null
+/usr/bin/eject -s "$DRIVE_NAME" >/dev/null 2>/dev/null)&
 exit 0

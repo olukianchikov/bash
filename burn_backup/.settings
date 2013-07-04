@@ -26,11 +26,16 @@ remote_user=lon
 remote_config=
 
 # ------ Locations ----------------------
-# Local directory for temporary files
+# Local directory for backup files. Downloaded backups will be
+# there.
 temp_directory=/usr/local/tmp
 
 # Local directory for temporary iso images.
 iso_directory=/usr/local/tmp/iso
+# ------ Limitations --------------------
+# How many backups to store in temp_directory. 
+# Set it to more than 0
+temp_directory_limit=2
 
 # ------ Burning options ----------------
 # Enable or disable multisession burning.

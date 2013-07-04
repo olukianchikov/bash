@@ -140,6 +140,7 @@ R_HOST=""
 R_USER=""
 R_CONFIG=""
 TEMP_DIR=""
+TEMP_DIR_LIMIT=1
 BURN_PROG=""
 BURN_PROG_ARGS=""
 ISO_DIR=""
@@ -172,6 +173,7 @@ do
 			  R_CONFIG=$parameter_val ;;
          "temp_directory") TEMP_DIR=$parameter_val 
 			   test ${TEMP_DIR:0-1} != "/" && TEMP_DIR=$TEMP_DIR"/";;
+	 "temp_directory_limit") test $parameter_val -ge 1 && TEMP_DIR_LIMIT=$parameter_val ;;
      esac
 done <"${SETTINGS_F:?'Sorry no settings file was found. Aborting.'}"
 # end of parsing .settings file
@@ -244,7 +246,7 @@ ping -w 2 $R_HOST >/dev/null ||\
    exit 1
 }
 
-# Create subdirectory in TEMP_DIR:
+# Create subdirectory in TEMP_DIR to store downloaded backup there:
 test -d $TEMP_DIR"$R_HOST" || \
 {
    mkdir $TEMP_DIR"$R_HOST" >/dev/null 2>/dev/null
@@ -268,6 +270,23 @@ test -d $TEMP_DIR"lastbackup" || \
       CREATED_DIRS=$CREATED_DIRS$TEMP_DIR"lastbackup"" "
    fi
 }
+
+# Deleting excessive backups in $TEMP_DIR"$R_HOST" :
+cur_amount=`ls -ltr $TEMP_DIR"$R_HOST" | wc -l`
+while [[ $cur_amount -ge $TEMP_DIR_LIMIT ]];
+do
+      to_delete_dir=`ls -ltr $TEMP_DIR"$R_HOST" | awk '{ if (NR>1){print $9; exit;}}'`
+      test -z $to_delete_dir && break
+      rm -R $TEMP_DIR"$R_HOST"${to_delete_dir} ||\
+      {
+         ERR_MSG=$ERR_MSG`cutedate`"Error. Can not delete ${to_delete_dir} directory.""\n"
+         break
+      }
+      cur_amount=`ls -ltr $TEMP_DIR"$R_HOST" | wc -l`
+      to_delete_dir=""
+done
+
+
 
 # Create one more subdirectory
 c=0
