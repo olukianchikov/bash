@@ -277,7 +277,7 @@ while [[ $cur_amount -ge $TEMP_DIR_LIMIT ]];
 do
       to_delete_dir=`ls -ltr $TEMP_DIR"$R_HOST" | awk '{ if (NR>1){print $9; exit;}}'`
       test -z $to_delete_dir && break
-      rm -R $TEMP_DIR"$R_HOST"${to_delete_dir} ||\
+      rm -R $TEMP_DIR"$R_HOST""/"${to_delete_dir} ||\
       {
          ERR_MSG=$ERR_MSG`cutedate`"Error. Can not delete ${to_delete_dir} directory.""\n"
          break

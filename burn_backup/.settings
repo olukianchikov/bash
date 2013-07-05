@@ -31,11 +31,13 @@ remote_config=
 temp_directory=/usr/local/tmp
 
 # Local directory for temporary iso images.
+# It is used only if CD disk is to be burnt.
+# But anyway, you have to define it.
 iso_directory=/usr/local/tmp/iso
 # ------ Limitations --------------------
 # How many backups to store in temp_directory. 
 # Set it to more than 0
-temp_directory_limit=2
+temp_directory_limit=6
 
 # ------ Burning options ----------------
 # Enable or disable multisession burning.

@@ -1,4 +1,4 @@
-#!/bin/bash -xv
+#!/bin/bash -
 # Burning script
 # It creates iso file from given files and burn it to the disk
 
@@ -238,18 +238,22 @@ test $hasMedia -eq 1 ||
 }
 
 # -- If the disk is closed, exit:
+# One remark - if DVD-RW in restricted overwrite mode, it will be seen as closed.
 is_closed=`udisks --show-info "$DRIVE_NAME" | awk -F ':' '{if($0 ~ "^ *closed"){match ($2, "[01]"); print substr($2, RSTART, RLENGTH);}}'`
-if [[ $is_closed -eq 1 ]];
-then
-    ERR_MSG=$ERR_MSG`cutedate`"Error. Can not write to the disk because the disk is finalized already.""\n"
-    exit 1         
-fi
-
-
 
 #------- Determining how much of free space we have on the media based on    ---------
 #-------    what type of disk we have:                                      ---------
 nameMedia=`udisks --show-info "$DRIVE_NAME" | awk -F ':' '{if($0 ~ "^ *media"){match($2,"[0-9a-zA-Z_.-]+"); print substr($2,RSTART,RLENGTH);}}'`
+
+echo $nameMedia | grep -i "dvd" | grep -v 'dvd_rw' >/dev/null &&\
+{
+  if [[ $is_closed -eq 1 ]];
+  then
+     ERR_MSG=$ERR_MSG`cutedate`"Error. Can not write to the disk because the disk is finalized already.""\n"
+     exit 1         
+  fi
+}
+
 echo $nameMedia | grep -i "dvd" >/dev/null &&\
 {  # --------- If we have a DVD -------------
   blankMedia=`udisks --show-info "$DRIVE_NAME" | awk -F ':' '{if($0 ~ "blank"){match($2,"[01] *\(*"); print substr($2,RSTART,1);}}'`
@@ -267,6 +271,12 @@ echo $nameMedia | grep -i "dvd" >/dev/null &&\
 
 echo $nameMedia | grep -i "cd" >/dev/null &&\
 {  # --------- If we have a CD -------------
+  if [[ $is_closed -eq 1 ]];
+  then
+     ERR_MSG=$ERR_MSG`cutedate`"Error. Can not write to the disk because the disk is finalized already.""\n"
+     exit 1         
+  fi
+  
   blankMedia=`udisks --show-info "$DRIVE_NAME" | awk -F ':' '{if($0 ~ "blank"){match($2,"[01] *\(*"); print substr($2,RSTART,1);}}'`
   # As we don't want to spend much time determining exact max size, we will assume minimum 
   # for most cd-r disks
@@ -282,17 +292,17 @@ echo $nameMedia | grep -i "cd" >/dev/null &&\
  # --------------------------------------------
 
  # Get the name for ISO-FILE
-test -f $ISO_DIR"$ISO_FILE_prefix""$ISO_FILE_suffix" &&\
-{
-       ERR_MSG=$ERR_MSG`cutedate`"Error. $ISO_DIR$ISO_FILE_prefix$ISO_FILE_suffix file exists.""\n"
-       exit 1
-} ||\
-{
-       ISO_FILE=$ISO_DIR"$ISO_FILE_prefix""$ISO_FILE_suffix"
-}
+#test -f $ISO_DIR"$ISO_FILE_prefix""$ISO_FILE_suffix" &&\
+#{
+#       ERR_MSG=$ERR_MSG`cutedate`"Error. $ISO_DIR$ISO_FILE_prefix$ISO_FILE_suffix file exists.""\n"
+#       exit 1
+#} ||\
+#{
+#       ISO_FILE=$ISO_DIR"$ISO_FILE_prefix""$ISO_FILE_suffix"
+#}
  # --------------------------
 
-# Get the size of the content of ISO_DIR, following all symbol links.
+# Get the size of the content of SOURCES_DIR, following all symbol links.
 # ISO_DIR should contain only relevant files to burn and nothing more.
 # SOURCE_FILES_DIR
   SOURCE_FILES_SIZE=`du -b -d0 -L $SOURCE_FILES_DIR | awk '{print $1;}'`
@@ -321,6 +331,10 @@ else
    fi 
 fi
 
+# Getting name for new future directory inside the disk:
+dir_name="backup_"`date +"%y%m%d_%H%M"`
+
+
 #   ------------  Preparing BURN_COMMAND and CLOSING_COMMAND for burning process:
 test $closing_needed -eq 0 -a $burning_needed -eq 0 &&\
 {
@@ -333,22 +347,34 @@ test $closing_needed -eq 0 -a $burning_needed -eq 0 &&\
 # gracetime - timeout before start
 echo $nameMedia | grep -i "cd" >/dev/null &&\
 {
+    # We need to create ISO-file, because wodim needs presaved ISO-file.
+    # Getting the name of future ISO-file:
+    test -f $ISO_DIR"$ISO_FILE_prefix""$ISO_FILE_suffix"
+    if [[ $? -eq 0 ]];
+    then
+         ISO_FILE=$ISO_DIR"$ISO_FILE_prefix""$ISO_FILE_suffix"
+    else
+         ERR_MSG=$ERR_MSG`cutedate`"Error. $ISO_DIR$ISO_FILE_prefix$ISO_FILE_suffix file exists.""\n"
+         exit 1
+    fi
+
    if [[ $burning_needed -eq 1 && $closing_needed -eq 1 ]];
    then
        # This burning command will close the disk:
-       BURN_COMMAND="wodim -s speed=2 gracetime=8  dev=$DRIVE_NAME -data $ISO_FILE"
+       BURN_COMMAND="genisoimage -f -r -J -root $dir_name -o $ISO_FILE $SOURCE_FILES_DIR && wodim -s speed=2 gracetime=8  dev=$DRIVE_NAME -data $ISO_FILE"
        # No need for separate closing:
        CLOSING_COMMAND=""
+       echo `cutedate`"After successful writing the disk will have no enough space and should be replaced." >>$LOG_F
    fi
    if [[ $burning_needed -eq 1 && $closing_needed -eq 0 ]];
    then
        if [[ ${MULTI} -eq 1 ]];
        then
            # This burning command will not close the disk:
-           BURN_COMMAND="wodim -multi -s speed=2 gracetime=8  dev=$DRIVE_NAME -data $ISO_FILE"
+BURN_COMMAND="genisoimage -f -r -J -root $dir_name -o $ISO_FILE $SOURCE_FILES_DIR && wodim -multi -s speed=2 gracetime=8  dev=$DRIVE_NAME -data $ISO_FILE"
            CLOSING_COMMAND=""
        else
-           BURN_COMMAND="wodim -s speed=2 gracetime=8  dev=$DRIVE_NAME -data $ISO_FILE"
+BURN_COMMAND="genisoimage -f -r -J -root $dir_name -o $ISO_FILE $SOURCE_FILES_DIR && wodim -s speed=2 gracetime=8  dev=$DRIVE_NAME -data $ISO_FILE"
            CLOSING_COMMAND=""
        fi
    fi
@@ -369,14 +395,13 @@ echo $nameMedia | grep -i "dvd" | grep -v 'dvd_rw'  >/dev/null &&\
    then
        if [[ $blankMedia -eq 1 ]];
        then
-           BURN_COMMAND="growisofs -speed=1 -Z $DRIVE_NAME=$ISO_FILE"
+           BURN_COMMAND="growisofs -speed=1 -f -r -J -root $dir_name -Z $DRIVE_NAME $SOURCE_FILES_DIR"
        else 
            if [[ ${MULTI} -eq 1 ]];
            then
-               sector_numbers="-C `getSectorNumbers $DRIVE_NAME`"
-               BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"" -C `getSectorNumbers $DRIVE_NAME`"
+               BURN_COMMAND="growisofs -speed=1 -f -r -J -root $dir_name -M $DRIVE_NAME $SOURCE_FILES_DIR"
            else
-               BURN_COMMAND="growisofs -speed=1 -Z -dvd-compat $DRIVE_NAME=$ISO_FILE"
+               BURN_COMMAND="growisofs -speed=1 -f -r -J -root $dir_name -Z -dvd-compat $DRIVE_NAME $SOURCE_FILES_DIR"
            fi
        fi
        CLOSING_COMMAND=""
@@ -396,10 +421,10 @@ echo $nameMedia | grep -i "dvd_rw" >/dev/null &&\
       then
 	  if [[ $blankMedia -eq 1 ]];
 	  then   # Disk is blank. 
-		BURN_COMMAND="dvd+rw-format -blank=full $DRIVE_NAME && growisofs -speed=1 -Z $DRIVE_NAME=$ISO_FILE"
+		BURN_COMMAND="dvd+rw-format -blank=full $DRIVE_NAME && growisofs -speed=1 -f -r -J -root $dir_name -Z $DRIVE_NAME $SOURCE_FILES_DIR"
 	  else   # Disk is not blank.
-		BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"" -C `getSectorNumbers $DRIVE_NAME`"
-		sector_numbers=" -C `getSectorNumbers $DRIVE_NAME`"
+		BURN_COMMAND="growisofs -speed=1 -f -r -J -root $dir_name -M $DRIVE_NAME $SOURCE_FILES_DIR"
+		#sector_numbers=" -C `getSectorNumbers $DRIVE_NAME`"
 	  fi
       fi 
       # Warn if this disk will be written last time:
@@ -411,11 +436,11 @@ echo $nameMedia | grep -i "dvd_rw" >/dev/null &&\
       if [[ $burning_needed -eq 1 ]];
       then  # It needs to be burnt
 	  if [[ $blankMedia -eq 1 ]];
-	  then  # Disk is blank. 
-                BURN_COMMAND="dvd+rw-format $DRIVE_NAME && growisofs -speed=1 -Z $DRIVE_NAME=$ISO_FILE"
+	  then  # Disk is blank.  We have to put it into Restricted overwrite mode.
+                BURN_COMMAND="dvd+rw-format -force $DRIVE_NAME && growisofs -speed=1 -f -r -J -root $dir_name -Z $DRIVE_NAME $SOURCE_FILES_DIR"
                 CLOSING_COMMAND=""
 	  else # Disk is not blank. 
-	        BURN_COMMAND="growisofs -speed=1 -M $DRIVE_NAME=$ISO_FILE"
+	        BURN_COMMAND="growisofs -speed=1 -f -r -J -root $dir_name -M $DRIVE_NAME $SOURCE_FILES_DIR"
 		CLOSING_COMMAND=""
 	  fi
       fi
@@ -430,15 +455,15 @@ echo $nameMedia | grep -i "dvd_rw" >/dev/null &&\
 #  ------    generating ISO:
 # sector_numbers holds either empty string or sector numbers in format 0,0.
 # They are needed for generating ISO file that is suitable for multi sessions.
-dir_name="backup_"`date +"%y%m%d_%H%M"`
-genisoimage -f -r -J -root $dir_name -o $ISO_FILE "$SOURCE_FILES_DIR"
-test $? -ne 0 &&\
-{
-       CREATED_FILES=$CREATED_FILES"$ISO_FILE "
-       ERR_MSG=$ERR_MSG`cutedate`"Error during ISO creation. Aborting.""\n"
-       exit 1
-}
-CREATED_FILES=$CREATED_FILES"$ISO_FILE "
+
+#genisoimage -f -r -J -root $dir_name -o $ISO_FILE "$SOURCE_FILES_DIR"
+#test $? -ne 0 &&\
+#{
+#       CREATED_FILES=$CREATED_FILES"$ISO_FILE "
+#       ERR_MSG=$ERR_MSG`cutedate`"Error during ISO creation. Aborting.""\n"
+#       exit 1
+#}
+#CREATED_FILES=$CREATED_FILES"$ISO_FILE "
 # ----
 
 
@@ -452,7 +477,7 @@ CREATED_FILES=$CREATED_FILES"$ISO_FILE "
 # -------
 
 # Get the file size of the ISO image:
-ISO_FILE_SIZE=`stat --format=%s $ISO_FILE`
+#ISO_FILE_SIZE=`stat --format=%s $ISO_FILE`
 
 
 
@@ -466,7 +491,7 @@ then
     eval $BURN_COMMAND &&\
     echo `cutedate`" Burning completed." >>$LOG_F ||\
     {
-       echo `cutedate`"Error. Burning has been failed. Iso image is kept for future use." >>$ERR_F
+       echo `cutedate`"Error. Burning failed. If you uses CD disk, maybe ISO file could not be created." >>$ERR_F
        /usr/bin/eject -s "$DRIVE_NAME"
        exit 1
     }
@@ -477,7 +502,7 @@ then
     eval $CLOSING_COMMAND &&\
     echo `cutedate`"Disk has been finalized." >>$LOG_F ||\
     {
-      echo `cutedate`"Error. Unable to finalize the disk. Iso image is kept for future use." >>$ERR_F
+      echo `cutedate`"Error. Unable to finalize the disk." >>$ERR_F
       /usr/bin/eject -s "$DRIVE_NAME"
       exit 1
     }
