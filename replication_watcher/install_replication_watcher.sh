@@ -376,12 +376,12 @@ then
     mv ${SCRIPT_DIR}"/recovery.conf" ${DATA_DIR}"/recovery.done" &&\
     CREATED_FILES="$CREATED_FILES ${DATA_DIR}/recovery.done"
     chown ${PGUSER1}:${PGUSER1_GROUP} ${DATA_DIR}"/recovery.done"
-    chmod 400 ${SCRIPT_DIR}"/recovery.done"
+    chmod 600 ${DATA_DIR}"/recovery.done"
 else
     mv ${SCRIPT_DIR}"/recovery.conf" ${DATA_DIR}"/recovery.conf" &&\
     CREATED_FILES="$CREATED_FILES ${DATA_DIR}/recovery.conf"
     chown ${PGUSER1}:${PGUSER1_GROUP} ${DATA_DIR}"/recovery.conf"
-    chmod 400 ${SCRIPT_DIR}"/recovery.conf"
+    chmod 600 ${DATA_DIR}"/recovery.conf"
 fi
 
 # Finish. Give some info if everything has been successfull:
