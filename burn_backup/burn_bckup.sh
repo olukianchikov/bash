@@ -364,6 +364,7 @@ echo $nameMedia | grep -i "cd" >/dev/null &&\
        BURN_COMMAND="genisoimage -f -r -J -root $dir_name -o $ISO_FILE $SOURCE_FILES_DIR && wodim -s speed=2 gracetime=8  dev=$DRIVE_NAME -data $ISO_FILE"
        # No need for separate closing:
        CLOSING_COMMAND=""
+       echo `cutedate`"Regular burning and closing on CD-R." >>$LOG_F
        echo `cutedate`"After successful writing the disk will have no enough space and should be replaced." >>$LOG_F
    fi
    if [[ $burning_needed -eq 1 && $closing_needed -eq 0 ]];
@@ -373,9 +374,11 @@ echo $nameMedia | grep -i "cd" >/dev/null &&\
            # This burning command will not close the disk:
 BURN_COMMAND="genisoimage -f -r -J -root $dir_name -o $ISO_FILE $SOURCE_FILES_DIR && wodim -multi -s speed=2 gracetime=8  dev=$DRIVE_NAME -data $ISO_FILE"
            CLOSING_COMMAND=""
+           echo `cutedate`"Multisession burning on CD-R." >>$LOG_F
        else
 BURN_COMMAND="genisoimage -f -r -J -root $dir_name -o $ISO_FILE $SOURCE_FILES_DIR && wodim -s speed=2 gracetime=8  dev=$DRIVE_NAME -data $ISO_FILE"
            CLOSING_COMMAND=""
+           echo `cutedate`"Regular burning on CD-R without closing." >>$LOG_F
        fi
    fi
    if [[ $burning_needed -eq 0 && $closing_needed -eq 1 ]];
@@ -385,6 +388,7 @@ BURN_COMMAND="genisoimage -f -r -J -root $dir_name -o $ISO_FILE $SOURCE_FILES_DI
        # However, we have to close the disk (meaning we can't burn due to no free space, but
        #   we can't leave the disk uncloased. So close it).
        CLOSING_COMMAND="wodim -s speed=2 gracetime=8  dev=$DRIVE_NAME -data /dev/zero"
+       echo `cutedate`"Closing the disk." >>$LOG_F
    fi
 }
 
@@ -396,12 +400,15 @@ echo $nameMedia | grep -i "dvd" | grep -v 'dvd_rw'  >/dev/null &&\
        if [[ $blankMedia -eq 1 ]];
        then
            BURN_COMMAND="growisofs -speed=1 -f -r -J -root $dir_name -Z $DRIVE_NAME $SOURCE_FILES_DIR"
+           echo `cutedate`"Burning on blank DVD-R." >>$LOG_F
        else 
            if [[ ${MULTI} -eq 1 ]];
            then
                BURN_COMMAND="growisofs -speed=1 -f -r -J -root $dir_name -M $DRIVE_NAME $SOURCE_FILES_DIR"
+               echo `cutedate`"Multisession burning on not blank DVD-R." >>$LOG_F
            else
                BURN_COMMAND="growisofs -speed=1 -f -r -J -root $dir_name -Z -dvd-compat $DRIVE_NAME $SOURCE_FILES_DIR"
+               echo `cutedate`"Regular burning on not blank DVD-R." >>$LOG_F
            fi
        fi
        CLOSING_COMMAND=""
@@ -422,9 +429,10 @@ echo $nameMedia | grep -i "dvd_rw" >/dev/null &&\
 	  if [[ $blankMedia -eq 1 ]];
 	  then   # Disk is blank. 
 		BURN_COMMAND="dvd+rw-format -blank=full $DRIVE_NAME && growisofs -speed=1 -f -r -J -root $dir_name -Z $DRIVE_NAME $SOURCE_FILES_DIR"
+		echo `cutedate`"Multisession burning on blank DVD-RW." >>$LOG_F
 	  else   # Disk is not blank.
 		BURN_COMMAND="growisofs -speed=1 -f -r -J -root $dir_name -M $DRIVE_NAME $SOURCE_FILES_DIR"
-		#sector_numbers=" -C `getSectorNumbers $DRIVE_NAME`"
+		echo `cutedate`"Multisession burning on not blank DVD-RW." >>$LOG_F
 	  fi
       fi 
       # Warn if this disk will be written last time:
@@ -439,9 +447,11 @@ echo $nameMedia | grep -i "dvd_rw" >/dev/null &&\
 	  then  # Disk is blank.  We have to put it into Restricted overwrite mode.
                 BURN_COMMAND="dvd+rw-format -force $DRIVE_NAME && growisofs -speed=1 -f -r -J -root $dir_name -Z $DRIVE_NAME $SOURCE_FILES_DIR"
                 CLOSING_COMMAND=""
+                echo `cutedate`"Burning in restricted overwrite mode on blank DVD-RW." >>$LOG_F
 	  else # Disk is not blank. 
 	        BURN_COMMAND="growisofs -speed=1 -f -r -J -root $dir_name -M $DRIVE_NAME $SOURCE_FILES_DIR"
 		CLOSING_COMMAND=""
+		echo `cutedate`"Burning in restricted overwrite mode on not blank DVD-RW." >>$LOG_F
 	  fi
       fi
       # Warn if this disk will be written last time:
