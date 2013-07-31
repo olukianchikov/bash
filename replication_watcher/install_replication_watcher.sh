@@ -386,7 +386,8 @@ fi
 
 # Finish. Give some info if everything has been successfull:
 test ${succeed} -eq 1 &&\
-{
+{   
+    echo ""
     echo "The replication watcher has been installed."
     echo "It will be automatically launched upon system startup. Keep very restrictive file and directory permissions for it."
     echo "You can always check if replication_watcher is working by typing: ${RC_DIR}/replication_watcher status."
