@@ -36,6 +36,8 @@ SRC_TAR=`echo $0 | awk -F '/' 'BEGIN{ ORS="/"} END { for (i=1; i<NF; i++) { prin
 CREATED_FILES=""
 CREATED_DIRS=""
 MASTER_ROLE=0
+PID_DIR="/var/run/replication_watcher"
+PID_F="replication_watcher.pid"
 
 echo "This script is going to install replication_watcher."
 echo "Please, make sure you run it by root."
@@ -194,6 +196,33 @@ do
 done
 RC_DIR=`strip_trailing_slash ${RC_DIR}`
 
+#PID_DIR:
+succeed=0
+while [[ $succeed -ne 1 ]]
+do
+test -d ${PID_DIR} && \
+{
+   chown ${PGUSER1}:${PGUSER1_GROUP} ${PID_DIR} ;
+   chmod 750 ${PID_DIR} ;
+   PID_F=${PID_DIR}"/"${PID_F} ;
+   if [[ $? -eq 0 ]];
+   then
+      CREATED_DIRS="$CREATED_DIRS ${PID_DIR}"
+      succeed=1
+   fi
+} ||\
+{
+   mkdir ${PID_DIR} &>/dev/null
+   if [[ $? -ne 0 ]];
+   then
+       echo "I can not create ${PID_DIR}."
+       echo -e "Specify directory where pid file will be stored: "
+       read -e PID_DIR
+       PID_DIR=`strip_trailing_slash ${PID_DIR}`
+   fi
+}
+done
+
 # SCRIPT_DIR:
 succeed=0
 while [[ $succeed -ne 1 ]]
@@ -271,7 +300,7 @@ succeed=0
 mv ${SCRIPT_DIR}"/rc/replication_watcher" ${RC_DIR}"/replication_watcher" &>/dev/null && \
     {  # Changes required for rc script.
      CREATED_FILES="$CREATED_FILES ${RC_DIR}/replication_watcher" ;
-     sed '1 s|\(#!\)\/.*|\1'"${SH_F}"'| ; 10 s|\(r_w_script=\).*|\1'"${SCRIPT_DIR}/replication_watcher.sh"'| ; 11 s|\(pgsql_user=\).*|\1'"${PGUSER1}"'|' <${RC_DIR}"/replication_watcher" >"/tmp/replication_watcher.tmp"
+     sed '1 s|\(#!\)\/.*|\1'"${SH_F}"'| ; 10 s|\(r_w_script=\).*|\1'"${SCRIPT_DIR}/replication_watcher.sh"'| ; 11 s|\(pgsql_user=\).*|\1'"${PGUSER1}"'| ; 19 s|\(pidfile=\).*|\1'"${PID_F}"'|' <${RC_DIR}"/replication_watcher" >"/tmp/replication_watcher.tmp"
      cat "/tmp/replication_watcher.tmp" >${RC_DIR}"/replication_watcher"
      rm "/tmp/replication_watcher.tmp"
      rmdir ${SCRIPT_DIR}"/rc"
