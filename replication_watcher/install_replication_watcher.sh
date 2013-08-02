@@ -312,7 +312,7 @@ mv ${SCRIPT_DIR}"/rc/replication_watcher" ${RC_DIR}"/replication_watcher" &>/dev
     chmod 550 ${RC_DIR}"/replication_watcher"
     
      # Changes required for main script:
-    sed '1 s|\(#!\)\/.*|\1'"$BASH_F"'| ; 7 s|\(OUR_IP=\).*|\1'"$OUR_IP"'| ; 8 s|\(SERVER1_IP=\).*|\1'"$SERVER1_IP"'| ; 11 s|\(DATA_DIR=\).*|\1'"$DATA_DIR"'| ; 12 s|\(LOG_F=\).*|\1'"$LOG_F"'| ; 14 s|\(PGUSER2=\).*|\1'"$PGUSER1"'| ; 24 s|\(TIMEOUT=\).*|\1'"$TIMEOUT"'|' <${SCRIPT_DIR}"/replication_watcher.sh" >"/tmp/replication_watcher.sh.tmp"
+    sed '1 s|\(#!\)\/.*|\1'"$BASH_F"'| ; 7 s|\(OUR_IP=\).*|\1'"$OUR_IP"'| ; 8 s|\(SERVER1_IP=\).*|\1'"$SERVER1_IP"'| ; 11 s|\(DATA_DIR=\).*|\1'"$DATA_DIR"'| ; 12 s|\(LOG_F=\).*|\1'"$LOG_F"'| ; 14 s|\(PGUSER2=\).*|\1'"$PGUSER1"'| ; 24 s|\(TIMEOUT=\).*|\1'"$TIMEOUT"'| ; 35 s|\(pid_file=\).*|\1'"${PID_F}"'|' <${SCRIPT_DIR}"/replication_watcher.sh" >"/tmp/replication_watcher.sh.tmp"
     cat "/tmp/replication_watcher.sh.tmp" >${SCRIPT_DIR}"/replication_watcher.sh"
     rm "/tmp/replication_watcher.sh.tmp"
     if [[ $? -ne 0 ]];
