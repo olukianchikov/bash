@@ -295,6 +295,38 @@ read SERVER1_IP
 echo -e "Specify timeout in seconds meaning how big will be timeout between replication checks (e.g. 10): "
 read TIMEOUT
 
+#Asking about master_address_for_www file:
+succeed=0
+while [[ $succeed -ne 1 ]];
+do
+  echo -e "Give path to file containing the ip-address of current Master server (press n if you don't need it): "
+  read -e answer
+  if [[ "${answer}" = "n" ]];
+  then
+      master_address_for_www=""
+      succeed=1
+  else
+      answer_tmp=`strip_trailing_slash ${answer}`
+      answer_tmp=`echo $answer_tmp | awk -F '/' 'BEGIN{ORS="/"}END{var2=NF-1; for(var=1;var<=var2;var++){print $var}}'`
+      test -d ${answer_tmp} &&\
+      {
+        master_address_for_www=${answer}
+        touch ${master_address_for_www}
+        if [[ $? -eq 0 ]];
+        then
+            succeed=1
+            CREATED_FILES="$CREATED_FILES ${master_address_for_www}"
+        fi
+        chown ${PGUSER1}:${PGUSER1_GROUP} ${master_address_for_www}
+        chmod 644 ${master_address_for_www}
+      } || {
+        echo "${answer_tmp} is not proper directory."
+      }
+  fi
+done
+
+
+
 # CHANGING SOME VALUES IN RC AND MAIN SCRIPT FILES BASED ON PROVIDED INFO:
 succeed=0
 mv ${SCRIPT_DIR}"/rc/replication_watcher" ${RC_DIR}"/replication_watcher" &>/dev/null && \
@@ -312,7 +344,7 @@ mv ${SCRIPT_DIR}"/rc/replication_watcher" ${RC_DIR}"/replication_watcher" &>/dev
     chmod 550 ${RC_DIR}"/replication_watcher"
     
      # Changes required for main script:
-    sed '1 s|\(#!\)\/.*|\1'"$BASH_F"'| ; 7 s|\(OUR_IP=\).*|\1'"$OUR_IP"'| ; 8 s|\(SERVER1_IP=\).*|\1'"$SERVER1_IP"'| ; 11 s|\(DATA_DIR=\).*|\1'"$DATA_DIR"'| ; 12 s|\(LOG_F=\).*|\1'"$LOG_F"'| ; 14 s|\(PGUSER2=\).*|\1'"$PGUSER1"'| ; 24 s|\(TIMEOUT=\).*|\1'"$TIMEOUT"'| ; 35 s|\(pid_file=\).*|\1'"${PID_F}"'|' <${SCRIPT_DIR}"/replication_watcher.sh" >"/tmp/replication_watcher.sh.tmp"
+    sed '1 s|\(#!\)\/.*|\1'"$BASH_F"'| ; 7 s|\(OUR_IP=\).*|\1'"$OUR_IP"'| ; 8 s|\(SERVER1_IP=\).*|\1'"$SERVER1_IP"'| ; 11 s|\(DATA_DIR=\).*|\1'"$DATA_DIR"'| ; 12 s|\(LOG_F=\).*|\1'"$LOG_F"'| ; 14 s|\(PGUSER2=\).*|\1'"$PGUSER1"'| ; 24 s|\(TIMEOUT=\).*|\1'"$TIMEOUT"'| ; 35 s|\(pid_file=\).*|\1'"${PID_F}"'| ; 38 s|\(master_addr_for_www=\).*|\1"'"${master_address_for_www}"'"|' <${SCRIPT_DIR}"/replication_watcher.sh" >"/tmp/replication_watcher.sh.tmp"
     cat "/tmp/replication_watcher.sh.tmp" >${SCRIPT_DIR}"/replication_watcher.sh"
     rm "/tmp/replication_watcher.sh.tmp"
     if [[ $? -ne 0 ]];
@@ -417,10 +449,11 @@ fi
 test ${succeed} -eq 1 &&\
 {   
     echo ""
-    echo "The replication watcher has been installed."
+    echo "Congratulations. The replication watcher has been installed."
     echo "It will be automatically launched upon system startup. Keep very restrictive file and directory permissions for it."
     echo "You can always check if replication_watcher is working by typing: ${RC_DIR}/replication_watcher status."
     echo "Don't forget to add replication_watcher_enable=\"YES\" to /etc/rc.conf."
+    echo "If you want the script to perform an automatic failover, you should create an empty file ${PGUSER1_DIR}/allow_failover"
     exit 0
 } ||\
 {
