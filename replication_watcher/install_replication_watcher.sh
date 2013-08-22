@@ -393,6 +393,7 @@ mv ${SCRIPT_DIR}"/rc/replication_watcher" ${RC_DIR}"/replication_watcher" &>/dev
     chmod 500 ${SCRIPT_DIR}"/replication_watcher.sh"
 
 # Asking about the role of this server. It affects recovery.conf file name:
+echo ""
 succeed=0
 while [[ $succeed -ne 1 ]]
 do
