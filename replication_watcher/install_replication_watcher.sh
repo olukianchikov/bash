@@ -326,55 +326,6 @@ do
 done
 
 
-
-# CHANGING SOME VALUES IN RC AND MAIN SCRIPT FILES BASED ON PROVIDED INFO:
-succeed=0
-mv ${SCRIPT_DIR}"/rc/replication_watcher" ${RC_DIR}"/replication_watcher" &>/dev/null && \
-    {  # Changes required for rc script.
-     CREATED_FILES="$CREATED_FILES ${RC_DIR}/replication_watcher" ;
-     sed '1 s|\(#!\)\/.*|\1'"${SH_F}"'| ; 10 s|\(r_w_script=\).*|\1'"${SCRIPT_DIR}/replication_watcher.sh"'| ; 11 s|\(pgsql_user=\).*|\1'"${PGUSER1}"'| ; 19 s|\(pidfile=\).*|\1'"${PID_F}"'|' <${RC_DIR}"/replication_watcher" >"/tmp/replication_watcher.tmp"
-     cat "/tmp/replication_watcher.tmp" >${RC_DIR}"/replication_watcher"
-     rm "/tmp/replication_watcher.tmp"
-     rmdir ${SCRIPT_DIR}"/rc"
-    } ||\
-    {
-     echo "Sorry, can not move ${SCRIPT_DIR}/rc/replication_watcher to ${RC_DIR}."
-    }
-    chown ${PGUSER1}:${PGUSER1_GROUP} ${RC_DIR}"/replication_watcher"
-    chmod 550 ${RC_DIR}"/replication_watcher"
-    
-     # Changes required for main script:
-    sed '1 s|\(#!\)\/.*|\1'"$BASH_F"'| ; 7 s|\(OUR_IP=\).*|\1'"$OUR_IP"'| ; 8 s|\(SERVER1_IP=\).*|\1'"$SERVER1_IP"'| ; 11 s|\(DATA_DIR=\).*|\1'"$DATA_DIR"'| ; 12 s|\(LOG_F=\).*|\1'"$LOG_F"'| ; 14 s|\(PGUSER2=\).*|\1'"$PGUSER1"'| ; 24 s|\(TIMEOUT=\).*|\1'"$TIMEOUT"'| ; 35 s|\(pid_file=\).*|\1'"${PID_F}"'| ; 38 s|\(master_addr_for_www=\).*|\1"'"${master_address_for_www}"'"|' <${SCRIPT_DIR}"/replication_watcher.sh" >"/tmp/replication_watcher.sh.tmp"
-    cat "/tmp/replication_watcher.sh.tmp" >${SCRIPT_DIR}"/replication_watcher.sh"
-    rm "/tmp/replication_watcher.sh.tmp"
-    if [[ $? -ne 0 ]];
-    then
-       echo "Sorry, can not make important changes to ${SCRIPT_DIR}/replication_watcher.sh."
-    fi
-    
-    chown ${PGUSER1}:${PGUSER1_GROUP} ${SCRIPT_DIR}"/replication_watcher.sh"
-    chmod 500 ${SCRIPT_DIR}"/replication_watcher.sh"
-
-# Asking about the role of this server. It affects recovery.conf file name:
-succeed=0
-while [[ $succeed -ne 1 ]]
-do
-  echo -n "Is this server Master? (y/n)"
-  read answer
-  if [[ "$answer" = "n" ]];
-  then
-      MASTER_ROLE=0
-      succeed=1
-  elif [[ "$answer" = "y" ]];
-  then
-      MASTER_ROLE=1
-      succeed=1
-  else
-      succeed=0
-  fi
-done
-
-
 # DB_REP_USER:
 succeed=0
 while [[ $succeed -ne 1 ]]
@@ -406,6 +357,54 @@ do
   elif [[ ! -z "$answer" ]];
   then
       DB_REP_USER_PASSWORD="$answer"
+      succeed=1
+  else
+      succeed=0
+  fi
+done
+
+
+# CHANGING SOME VALUES IN RC AND MAIN SCRIPT FILES BASED ON PROVIDED INFO:
+succeed=0
+mv ${SCRIPT_DIR}"/rc/replication_watcher" ${RC_DIR}"/replication_watcher" &>/dev/null && \
+    {  # Changes required for rc script.
+     CREATED_FILES="$CREATED_FILES ${RC_DIR}/replication_watcher" ;
+     sed '1 s|\(#!\)\/.*|\1'"${SH_F}"'| ; 10 s|\(r_w_script=\).*|\1'"${SCRIPT_DIR}/replication_watcher.sh"'| ; 11 s|\(pgsql_user=\).*|\1'"${PGUSER1}"'| ; 19 s|\(pidfile=\).*|\1'"${PID_F}"'|' <${RC_DIR}"/replication_watcher" >"/tmp/replication_watcher.tmp"
+     cat "/tmp/replication_watcher.tmp" >${RC_DIR}"/replication_watcher"
+     rm "/tmp/replication_watcher.tmp"
+     rmdir ${SCRIPT_DIR}"/rc"
+    } ||\
+    {
+     echo "Sorry, can not move ${SCRIPT_DIR}/rc/replication_watcher to ${RC_DIR}."
+    }
+    chown ${PGUSER1}:${PGUSER1_GROUP} ${RC_DIR}"/replication_watcher"
+    chmod 550 ${RC_DIR}"/replication_watcher"
+    
+     # Changes required for main script:
+    sed '1 s|\(#!\)\/.*|\1'"$BASH_F"'| ; 7 s|\(OUR_IP=\).*|\1'"$OUR_IP"'| ; 8 s|\(SERVER1_IP=\).*|\1'"$SERVER1_IP"'| ; 11 s|\(DATA_DIR=\).*|\1'"$DATA_DIR"'| ; 12 s|\(LOG_F=\).*|\1'"$LOG_F"'| ; 14 s|\(PGUSER2=\).*|\1'"$PGUSER1"'| ; 24 s|\(TIMEOUT=\).*|\1'"$TIMEOUT"'| ; 35 s|\(pid_file=\).*|\1'"${PID_F}"'| ; 38 s|\(master_addr_for_www=\).*|\1"'"${master_address_for_www}"'"| ; 41 s|\(dummy_user=\).*|\1"'"$DB_REP_USER"'"| ; 42 s|\(dummy_user_pass=\).*|\1'"'$DB_REP_USER_PASSWORD'"'|' <${SCRIPT_DIR}"/replication_watcher.sh" >"/tmp/replication_watcher.sh.tmp"
+    cat "/tmp/replication_watcher.sh.tmp" >${SCRIPT_DIR}"/replication_watcher.sh"
+    rm "/tmp/replication_watcher.sh.tmp"
+    if [[ $? -ne 0 ]];
+    then
+       echo "Sorry, can not make important changes to ${SCRIPT_DIR}/replication_watcher.sh."
+    fi
+    
+    chown ${PGUSER1}:${PGUSER1_GROUP} ${SCRIPT_DIR}"/replication_watcher.sh"
+    chmod 500 ${SCRIPT_DIR}"/replication_watcher.sh"
+
+# Asking about the role of this server. It affects recovery.conf file name:
+succeed=0
+while [[ $succeed -ne 1 ]]
+do
+  echo -n "Is this server Master? (y/n)"
+  read answer
+  if [[ "$answer" = "n" ]];
+  then
+      MASTER_ROLE=0
+      succeed=1
+  elif [[ "$answer" = "y" ]];
+  then
+      MASTER_ROLE=1
       succeed=1
   else
       succeed=0
