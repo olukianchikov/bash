@@ -1,0 +1,1 @@
+This script checks if md5 sum of files listed in .chkl equals the value of last check, it considers as ok. If different - it informs the specified user by e-mail.

@@ -1,0 +1,1 @@
+It checks if last auth.log has any record of suspicious log in. Last 100 lines of auth.log is checked and for some users (alexander, lon) there are time set to be ok for logging in (such as working hours). If anybody logged in at rather strange hour, the script will send an e-mail to the specified user.
